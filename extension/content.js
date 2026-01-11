@@ -4,77 +4,71 @@ async function scanPage() {
     const lines = document.querySelectorAll('.react-file-line, .blob-code-inner');
     if (lines.length === 0) return;
 
-    let packages = [];
+    let packagesToSend = [];
     let lineMap = new Map();
 
     lines.forEach((lineElement) => {
         const text = lineElement.innerText.trim();
-        const match = text.match(/^([a-zA-Z0-9-_]+)[=<>]+([0-9.]+)/);
+        const match = text.match(/^([a-zA-Z0-9-_]+)(?:[=<>]+([0-9.]+))?/);
         if (match) {
-            packages.push(match[0]);
-            lineMap.set(match[0], lineElement); 
+            const pkgName = match[1];
+            const pkgVersion = match[2];
+            const fullString = match[0]; // e.g., "celery" or "celery==5.0"
+            lineMap.set(fullString, lineElement);
+
+            if (pkgVersion) {
+                packagesToSend.push(fullString);
+            } else {
+                console.log(`⚠️ Missing version for ${pkgName}`);
+                paintRow(lineElement, "#fff8c5", "orange", `⚠️ Missing version for ${pkgName}. Cannot scan.`);
+            }
         }
     });
 
-    if (packages.length === 0) return;
-
-    console.log("1. Sending these packages to Backend:", packages);
-
+    if (packagesToSend.length === 0) {
+        console.log("No versioned packages found to scan.");
+        return;
+    }
+    console.log("1. Sending these packages to Backend:", packagesToSend);
     try {
         const response = await fetch("http://127.0.0.1:8000/scan", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ packages: packages })
+            body: JSON.stringify({ packages: packagesToSend })
         });
-
         const data = await response.json();
-        console.log("2. Backend Replied:", data); // <--- CRITICAL CHECK
-        
         highlightVulnerabilities(data.results, lineMap);
-
     } catch (error) {
         console.error("❌ ERROR talking to backend:", error);
     }
 }
+function paintRow(element, bgColor, borderColor, message) {
+    const row = element.closest('.react-file-line') || element.closest('.blob-code-inner') || element;
 
-// HELPER: Nuclear Option for Painting
-function highlightVulnerabilities(results, lineMap) {
-    console.log("3. Starting to highlight...");
+    if (row.dataset.guardianActive) return;
+    row.dataset.guardianActive = "true"; // Mark as painted
+
+    row.style.setProperty("background-color", bgColor, "important");
+    row.style.setProperty("border", `2px solid ${borderColor}`, "important");
+    row.style.setProperty("display", "block", "important");
+
+    const warning = document.createElement("b");
+    warning.innerText = ` ${message}`;
+    warning.style.color = borderColor; // Text color matches border
+    warning.style.marginLeft = "10px";
+    warning.style.fontSize = "12px";
+    warning.style.backgroundColor = "white";
+    warning.style.padding = "2px 5px";
     
+    row.appendChild(warning);
+}
+function highlightVulnerabilities(results, lineMap) {
     results.forEach(result => {
         if (result.status === "VULNERABLE") {
-            console.log(`---> Found VULNERABLE package: ${result.package}`);
-            
             for (let [codeStr, element] of lineMap.entries()) {
-                const matchName = codeStr.includes(result.package);
-                const matchVer = codeStr.includes(result.version);
-                
-                if (matchName && matchVer) {
-                    console.log(`✅ MATCH! Painting RED on: ${codeStr}`);
-                    
-                    // 1. Target the Container (The Row)
-                    // If 'element' is just a span, find the main row div
-                    const row = element.closest('.react-file-line') || element.closest('.blob-code-inner') || element;
-                    
-                    // 2. THE NUCLEAR STYLE (Overwrites everything)
-                    row.style.setProperty("background-color", "#ffebe9", "important");
-                    row.style.setProperty("border", "3px solid red", "important");
-                    row.style.setProperty("display", "block", "important"); // Ensures it takes up space
-                    
-                    // 3. Add the Warning Text
-                    // Check if we already added a warning to avoid duplicates
-                    if (!row.querySelector(".guardian-warning")) {
-                        const warning = document.createElement("b");
-                        warning.className = "guardian-warning"; // Tag it so we don't add it twice
-                        warning.innerText = ` 🚫 ${result.details.substring(0, 50)}...`; // Shorten text
-                        warning.style.color = "red";
-                        warning.style.marginLeft = "10px";
-                        warning.style.fontSize = "14px";
-                        warning.style.backgroundColor = "white";
-                        warning.style.padding = "2px 5px";
-                        
-                        row.appendChild(warning);
-                    }
+                // Simple check
+                if (codeStr.includes(result.package) && codeStr.includes(result.version)) {
+                    paintRow(element, "#ffebe9", "red", `🚫 ${result.details.substring(0, 60)}...`);
                 }
             }
         }
