@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Code Guardian",
+  "version": "1.0",
+  "description": "Scans requirements.txt on GitHub for vulnerabilities.",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["*://github.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
