@@ -1,9 +1,8 @@
-import requests
-import re  # Import Regex library
+import httpx # Swap requests for httpx
+import re
 
-def check_vulnerability(package_line):
-    # 1. Parsing with Regex
-    # Look for: (Package Name) followed by (Operator like ==, >=) followed by (Version Number)
+# Notice "async" before def
+async def check_vulnerability(package_line, client):
     match = re.search(r'([a-zA-Z0-9-_]+)[=<>]+([0-9.]+)', package_line)
     
     if not match:
@@ -12,29 +11,27 @@ def check_vulnerability(package_line):
     name = match.group(1)
     version = match.group(2)
     
-    # 2. Ask OSV API
     url = "https://api.osv.dev/v1/query"
     payload = {
         "version": version,
-        "package": {
-            "name": name,
-            "ecosystem": "PyPI"
-        }
+        "package": {"name": name, "ecosystem": "PyPI"}
     }
     
-    response = requests.post(url, json=payload).json()
-    
-    if "vulns" in response:
-        return {
-            "package": name,
-            "version": version,
-            "status": "VULNERABLE",
-            "count": len(response["vulns"]),
-            "details": response["vulns"][0]["summary"] 
-        }
-    
-    return {
-        "package": name, 
-        "version": version, 
-        "status": "SAFE"
-    }
+    # Async request (doesn't block other checks)
+    try:
+        response = await client.post(url, json=payload)
+        data = response.json()
+        
+        if "vulns" in data:
+            return {
+                "package": name,
+                "version": version,
+                "status": "VULNERABLE",
+                "count": len(data["vulns"]),
+                "details": data["vulns"][0]["summary"] 
+            }
+        
+        return {"package": name, "version": version, "status": "SAFE"}
+        
+    except Exception as e:
+        return {"package": name, "status": "ERROR", "details": str(e)}
